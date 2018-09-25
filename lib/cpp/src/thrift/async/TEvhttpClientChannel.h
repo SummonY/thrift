@@ -20,11 +20,14 @@
 #ifndef _THRIFT_TEVHTTP_CLIENT_CHANNEL_H_
 #define _THRIFT_TEVHTTP_CLIENT_CHANNEL_H_ 1
 
+#include <queue>
 #include <string>
-#include <boost/shared_ptr.hpp>
+#include <utility>
+#include <thrift/stdcxx.h>
 #include <thrift/async/TAsyncChannel.h>
 
 struct event_base;
+struct evdns_base;
 struct evhttp_connection;
 struct evhttp_request;
 
@@ -48,7 +51,8 @@ public:
                        const std::string& path,
                        const char* address,
                        int port,
-                       struct event_base* eb);
+                       struct event_base* eb,
+                       struct evdns_base *dnsbase = 0);
   ~TEvhttpClientChannel();
 
   virtual void sendAndRecvMessage(const VoidCallback& cob,
@@ -72,8 +76,9 @@ private:
 
   std::string host_;
   std::string path_;
-  VoidCallback cob_;
-  apache::thrift::transport::TMemoryBuffer* recvBuf_;
+  typedef std::pair<VoidCallback, apache::thrift::transport::TMemoryBuffer*> Completion;
+  typedef std::queue<Completion> CompletionQueue;
+  CompletionQueue completionQueue_;
   struct evhttp_connection* conn_;
 };
 }

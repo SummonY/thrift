@@ -19,6 +19,7 @@
 
 unit TestServer;
 
+{$I ../src/Thrift.Defines.inc}
 {$WARN SYMBOL_PLATFORM OFF}
 
 {.$DEFINE RunEndless}   // activate to interactively stress-test the server stop routines via Ctrl+C
@@ -28,7 +29,6 @@ interface
 uses
   Windows, SysUtils,
   Generics.Collections,
-  Thrift.Console,
   Thrift.Server,
   Thrift.Transport,
   Thrift.Transport.Pipes,
@@ -41,6 +41,7 @@ uses
   Thrift,
   TestConstants,
   TestServerEvents,
+  ConsoleHelper,
   Contnrs;
 
 type
@@ -163,7 +164,7 @@ begin
 
   if (arg = 'TException') then
   begin
-    raise TException.Create('');
+    raise TException.Create('TException');
   end;
 
   // else do not throw anything
@@ -184,44 +185,33 @@ end;
 function TTestServer.TTestHandlerImpl.testInsanity(
   const argument: IInsanity): IThriftDictionary<Int64, IThriftDictionary<TNumberz, IInsanity>>;
 var
-  hello, goodbye : IXtruct;
-  crazy : IInsanity;
   looney : IInsanity;
   first_map : IThriftDictionary<TNumberz, IInsanity>;
   second_map : IThriftDictionary<TNumberz, IInsanity>;
   insane : IThriftDictionary<Int64, IThriftDictionary<TNumberz, IInsanity>>;
 
 begin
-
   Console.WriteLine('testInsanity()');
-  hello := TXtructImpl.Create;
-  hello.String_thing := 'Hello2';
-  hello.Byte_thing := 2;
-  hello.I32_thing := 2;
-  hello.I64_thing := 2;
 
-  goodbye := TXtructImpl.Create;
-  goodbye.String_thing := 'Goodbye4';
-  goodbye.Byte_thing := 4;
-  goodbye.I32_thing := 4;
-  goodbye.I64_thing := 4;
-
-  crazy := TInsanityImpl.Create;
-  crazy.UserMap := TThriftDictionaryImpl<TNumberz, Int64>.Create;
-  crazy.UserMap.AddOrSetValue( TNumberz.EIGHT, 8);
-  crazy.Xtructs := TThriftListImpl<IXtruct>.Create;
-  crazy.Xtructs.Add(goodbye);
-
-  looney := TInsanityImpl.Create;
-  crazy.UserMap.AddOrSetValue( TNumberz.FIVE, 5);
-  crazy.Xtructs.Add(hello);
+  (**
+   * So you think you've got this all worked, out eh?
+   *
+   * Creates a the returned map with these values and prints it out:
+   *   { 1 => { 2 => argument,
+   *            3 => argument,
+   *          },
+   *     2 => { 6 => <empty Insanity struct>, },
+   *   }
+   * @return map<UserId, map<Numberz,Insanity>> - a map with the above values
+   *)
 
   first_map := TThriftDictionaryImpl<TNumberz, IInsanity>.Create;
   second_map := TThriftDictionaryImpl<TNumberz, IInsanity>.Create;
 
-  first_map.AddOrSetValue( TNumberz.TWO, crazy);
-  first_map.AddOrSetValue( TNumberz.THREE, crazy);
+  first_map.AddOrSetValue( TNumberz.TWO, argument);
+  first_map.AddOrSetValue( TNumberz.THREE, argument);
 
+  looney := TInsanityImpl.Create;
   second_map.AddOrSetValue( TNumberz.SIX, looney);
 
   insane := TThriftDictionaryImpl<Int64, IThriftDictionary<TNumberz, IInsanity>>.Create;
@@ -661,7 +651,7 @@ begin
       end;
 
       trns_Http : begin
-        raise Exception.Create('HTTP server transport not implemented');
+        raise Exception.Create(ENDPOINT_TRANSPORTS[endpoint]+' server transport not implemented');
       end;
 
       trns_NamedPipes : begin

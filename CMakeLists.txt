@@ -17,7 +17,14 @@
 # under the License.
 #
 
-cmake_minimum_required(VERSION 2.8.12)
+cmake_minimum_required(VERSION 3.1)
+
+# CMake 3.1 supports C++ standards selection with CMAKE_CXX_STANDARD
+# If you need CMake 3.1+ for Ubuntu 14.04, try
+#   https://launchpad.net/~george-edison55/+archive/ubuntu/cmake-3.x
+# If you need CMake 3.1+ for debian "jessie", get it from jessie-backports
+# Otherwise
+#   http://cmake.org
 
 project("Apache Thrift")
 
@@ -67,15 +74,22 @@ if(BUILD_TESTING)
 else ()
   message(STATUS "Building without tests")
 endif ()
+
 if(BUILD_COMPILER)
+    if(NOT EXISTS ${THRIFT_COMPILER})
+        set(THRIFT_COMPILER $<TARGET_FILE:thrift-compiler>)
+    endif()
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/compiler/cpp)
+elseif(EXISTS ${THRIFT_COMPILER})
+    add_executable(thrift-compiler IMPORTED)
+    set_property(TARGET thrift-compiler PROPERTY IMPORTED_LOCATION ${THRIFT_COMPILER})
 endif()
 
 if(BUILD_CPP)
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/lib/cpp)
     if(BUILD_TUTORIALS)
         add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/tutorial/cpp)
-    endif(BUILD_TUTORIALS)
+    endif()
     if(BUILD_TESTING)
         if(WITH_LIBEVENT AND WITH_ZLIB AND WITH_OPENSSL)
             add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/test/cpp)

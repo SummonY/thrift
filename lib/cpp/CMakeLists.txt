@@ -17,13 +17,6 @@
 # under the License.
 #
 
-# Find required packages
-if(WITH_BOOSTTHREADS)
-  find_package(Boost 1.53.0 REQUIRED COMPONENTS system thread)
-else()
-  find_package(Boost 1.53.0 REQUIRED)
-endif()
-
 include_directories(SYSTEM "${Boost_INCLUDE_DIRS}")
 include_directories(src)
 
@@ -35,6 +28,7 @@ set( thriftcpp_SOURCES
    src/thrift/TApplicationException.cpp
    src/thrift/TOutput.cpp
    src/thrift/async/TAsyncChannel.cpp
+   src/thrift/async/TAsyncProtocolProcessor.cpp
    src/thrift/async/TConcurrentClientSyncInfo.h
    src/thrift/async/TConcurrentClientSyncInfo.cpp
    src/thrift/concurrency/ThreadManager.cpp
@@ -46,7 +40,6 @@ set( thriftcpp_SOURCES
    src/thrift/protocol/TJSONProtocol.cpp
    src/thrift/protocol/TMultiplexedProtocol.cpp
    src/thrift/protocol/TProtocol.cpp
-   src/thrift/protocol/THeaderProtocol.cpp
    src/thrift/transport/TTransportException.cpp
    src/thrift/transport/TFDTransport.cpp
    src/thrift/transport/TSimpleFileTransport.cpp
@@ -58,7 +51,6 @@ set( thriftcpp_SOURCES
    src/thrift/transport/TServerSocket.cpp
    src/thrift/transport/TTransportUtils.cpp
    src/thrift/transport/TBufferTransports.cpp
-   src/thrift/transport/THeaderTransport.cpp
    src/thrift/server/TConnectedClient.cpp
    src/thrift/server/TServerFramework.cpp
    src/thrift/server/TSimpleServer.cpp
@@ -66,7 +58,7 @@ set( thriftcpp_SOURCES
    src/thrift/server/TThreadedServer.cpp
 )
 
-# This files don't work on Windows CE as there is no pipe support
+# These files don't work on Windows CE as there is no pipe support
 # TODO: These files won't work with UNICODE support on windows. If fixed this can be re-added.
 if (NOT WINCE)
     list(APPEND thriftcpp_SOURCES
@@ -119,7 +111,11 @@ if(WITH_BOOSTTHREADS)
     )
     list(APPEND SYSLIBS "${Boost_LIBRARIES}")
 elseif(UNIX AND NOT WITH_STDTHREADS)
-    list(APPEND SYSLIBS pthread)
+    if(ANDROID)
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
+    else()
+        list(APPEND SYSLIBS pthread)
+    endif()
     set( thriftcpp_threads_SOURCES
         src/thrift/concurrency/PosixThreadFactory.cpp
         src/thrift/concurrency/Mutex.cpp
@@ -127,8 +123,11 @@ elseif(UNIX AND NOT WITH_STDTHREADS)
     )
 else()
     if(UNIX)
-        # need pthread for multi-thread support
-        list(APPEND SYSLIBS pthread)
+        if(ANDROID)
+            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
+        else()
+            list(APPEND SYSLIBS pthread)
+        endif()
     endif()
     set( thriftcpp_threads_SOURCES
         src/thrift/concurrency/StdThreadFactory.cpp
@@ -140,7 +139,8 @@ endif()
 # Thrift non blocking server
 set( thriftcppnb_SOURCES
     src/thrift/server/TNonblockingServer.cpp
-    src/thrift/async/TAsyncProtocolProcessor.cpp
+    src/thrift/transport/TNonblockingServerSocket.cpp
+    src/thrift/transport/TNonblockingSSLServerSocket.cpp
     src/thrift/async/TEvhttpServer.cpp
     src/thrift/async/TEvhttpClientChannel.cpp
 )
@@ -148,6 +148,8 @@ set( thriftcppnb_SOURCES
 # Thrift zlib server
 set( thriftcppz_SOURCES
     src/thrift/transport/TZlibTransport.cpp
+    src/thrift/protocol/THeaderProtocol.cpp
+    src/thrift/transport/THeaderTransport.cpp
     src/thrift/protocol/THeaderProtocol.cpp
     src/thrift/transport/THeaderTransport.cpp
 )
@@ -162,7 +164,11 @@ set( thriftcppqt_SOURCES
 include(ThriftMacros)
 
 ADD_LIBRARY_THRIFT(thrift ${thriftcpp_SOURCES} ${thriftcpp_threads_SOURCES})
-TARGET_LINK_LIBRARIES_THRIFT(thrift ${SYSLIBS})
+if(WIN32)
+    TARGET_LINK_LIBRARIES_THRIFT(thrift ${SYSLIBS} ws2_32)
+else()
+    TARGET_LINK_LIBRARIES_THRIFT(thrift ${SYSLIBS})
+endif()
 
 if(WITH_LIBEVENT)
     find_package(Libevent REQUIRED)  # Libevent comes with CMake support form upstream

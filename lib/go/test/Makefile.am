@@ -17,8 +17,7 @@
 # under the License.
 #
 
-THRIFT = $(top_builddir)/compiler/cpp/thrift
-THRIFTARGS = -out gopath/src/ --gen go:thrift_import=thrift
+THRIFTARGS = -out gopath/src/ --gen go:thrift_import=thrift$(COMPILER_EXTRAFLAG)
 THRIFTTEST = $(top_srcdir)/test/ThriftTest.thrift
 
 # Thrift for GO has problems with complex map keys: THRIFT-2063
@@ -33,6 +32,7 @@ gopath: $(THRIFT) $(THRIFTTEST) \
 				TypedefFieldTest.thrift \
 				RefAnnotationFieldsTest.thrift \
 				UnionDefaultValueTest.thrift \
+				UnionBinaryTest.thrift \
 				ErrorTest.thrift \
 				NamesTest.thrift \
 				InitialismsTest.thrift \
@@ -51,11 +51,14 @@ gopath: $(THRIFT) $(THRIFTTEST) \
 	$(THRIFT) $(THRIFTARGS) TypedefFieldTest.thrift
 	$(THRIFT) $(THRIFTARGS) RefAnnotationFieldsTest.thrift
 	$(THRIFT) $(THRIFTARGS) UnionDefaultValueTest.thrift
+	$(THRIFT) $(THRIFTARGS) UnionBinaryTest.thrift
 	$(THRIFT) $(THRIFTARGS) ErrorTest.thrift
 	$(THRIFT) $(THRIFTARGS) NamesTest.thrift
 	$(THRIFT) $(THRIFTARGS) InitialismsTest.thrift
 	$(THRIFT) $(THRIFTARGS),read_write_private DontExportRWTest.thrift
 	$(THRIFT) $(THRIFTARGS),ignore_initialisms IgnoreInitialismsTest.thrift
+	GOPATH=`pwd`/gopath $(GO) get github.com/golang/mock/gomock || true
+	sed -i 's/\"context\"/\"golang.org\/x\/net\/context\"/g' gopath/src/github.com/golang/mock/gomock/controller.go || true
 	GOPATH=`pwd`/gopath $(GO) get github.com/golang/mock/gomock
 	ln -nfs ../../../thrift gopath/src/thrift
 	ln -nfs ../../tests gopath/src/tests
@@ -73,7 +76,8 @@ check: gopath
 				namestest \
 				initialismstest \
 				dontexportrwtest \
-				ignoreinitialismstest
+				ignoreinitialismstest \
+				unionbinarytest
 	GOPATH=`pwd`/gopath $(GO) test thrift tests dontexportrwtest
 
 clean-local:
@@ -94,6 +98,7 @@ EXTRA_DIST = \
 	OptionalFieldsTest.thrift \
 	RefAnnotationFieldsTest.thrift \
 	UnionDefaultValueTest.thrift \
+	UnionBinaryTest.thrift \
 	ServicesTest.thrift \
 	TypedefFieldTest.thrift \
 	ErrorTest.thrift \

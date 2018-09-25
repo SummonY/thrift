@@ -21,17 +21,17 @@
 
 #include <thrift/transport/THttpTransport.h>
 
+using std::string;
+
 namespace apache {
 namespace thrift {
 namespace transport {
-
-using namespace std;
 
 // Yeah, yeah, hacky to put these here, I know.
 const char* THttpTransport::CRLF = "\r\n";
 const int THttpTransport::CRLF_LEN = 2;
 
-THttpTransport::THttpTransport(boost::shared_ptr<TTransport> transport)
+THttpTransport::THttpTransport(stdcxx::shared_ptr<TTransport> transport)
   : transport_(transport),
     origin_(""),
     readHeaders_(true),
@@ -84,8 +84,10 @@ uint32_t THttpTransport::readEnd() {
 uint32_t THttpTransport::readMoreData() {
   uint32_t size;
 
-  // Get more data!
-  refill();
+  if (httpPos_ == httpBufLen_) {
+    // Get more data!
+    refill();
+  }
 
   if (readHeaders_) {
     readHeaders();
@@ -200,10 +202,11 @@ void THttpTransport::refill() {
   uint32_t avail = httpBufSize_ - httpBufLen_;
   if (avail <= (httpBufSize_ / 4)) {
     httpBufSize_ *= 2;
-    httpBuf_ = (char*)std::realloc(httpBuf_, httpBufSize_ + 1);
-    if (httpBuf_ == NULL) {
+    char* tmpBuf = (char*)std::realloc(httpBuf_, httpBufSize_ + 1);
+    if (tmpBuf == NULL) {
       throw std::bad_alloc();
     }
+    httpBuf_ = tmpBuf;
   }
 
   // Read more data
@@ -212,7 +215,7 @@ void THttpTransport::refill() {
   httpBuf_[httpBufLen_] = '\0';
 
   if (got == 0) {
-    throw TTransportException("Could not refill buffer");
+    throw TTransportException(TTransportException::END_OF_FILE, "Could not refill buffer");
   }
 }
 

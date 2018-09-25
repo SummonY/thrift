@@ -21,6 +21,9 @@
 
 #include <cstring>
 #include <sstream>
+#ifdef HAVE_SYS_IOCTL_H
+#include <sys/ioctl.h>
+#endif
 #ifdef HAVE_SYS_SOCKET_H
 #include <sys/socket.h>
 #endif
@@ -63,11 +66,11 @@ inline SOCKOPT_CAST_T* cast_sockopt(T* v) {
   return reinterpret_cast<SOCKOPT_CAST_T*>(v);
 }
 
+using std::string;
+
 namespace apache {
 namespace thrift {
 namespace transport {
-
-using namespace std;
 
 /**
  * TSocket implementation.
@@ -77,8 +80,8 @@ using namespace std;
 TSocket::TSocket(const string& host, int port)
   : host_(host),
     port_(port),
-    path_(""),
     socket_(THRIFT_INVALID_SOCKET),
+    peerPort_(0),
     connTimeout_(0),
     sendTimeout_(0),
     recvTimeout_(0),
@@ -90,10 +93,10 @@ TSocket::TSocket(const string& host, int port)
 }
 
 TSocket::TSocket(const string& path)
-  : host_(""),
-    port_(0),
+  : port_(0),
     path_(path),
     socket_(THRIFT_INVALID_SOCKET),
+    peerPort_(0),
     connTimeout_(0),
     sendTimeout_(0),
     recvTimeout_(0),
@@ -106,10 +109,9 @@ TSocket::TSocket(const string& path)
 }
 
 TSocket::TSocket()
-  : host_(""),
-    port_(0),
-    path_(""),
+  : port_(0),
     socket_(THRIFT_INVALID_SOCKET),
+    peerPort_(0),
     connTimeout_(0),
     sendTimeout_(0),
     recvTimeout_(0),
@@ -122,10 +124,9 @@ TSocket::TSocket()
 }
 
 TSocket::TSocket(THRIFT_SOCKET socket)
-  : host_(""),
-    port_(0),
-    path_(""),
+  : port_(0),
     socket_(socket),
+    peerPort_(0),
     connTimeout_(0),
     sendTimeout_(0),
     recvTimeout_(0),
@@ -143,11 +144,10 @@ TSocket::TSocket(THRIFT_SOCKET socket)
 #endif
 }
 
-TSocket::TSocket(THRIFT_SOCKET socket, boost::shared_ptr<THRIFT_SOCKET> interruptListener)
-  : host_(""),
-    port_(0),
-    path_(""),
+TSocket::TSocket(THRIFT_SOCKET socket, stdcxx::shared_ptr<THRIFT_SOCKET> interruptListener)
+  : port_(0),
     socket_(socket),
+    peerPort_(0),
     interruptListener_(interruptListener),
     connTimeout_(0),
     sendTimeout_(0),
@@ -168,6 +168,26 @@ TSocket::TSocket(THRIFT_SOCKET socket, boost::shared_ptr<THRIFT_SOCKET> interrup
 
 TSocket::~TSocket() {
   close();
+}
+
+bool TSocket::hasPendingDataToRead() {
+  if (!isOpen()) {
+    return false;
+  }
+
+  int32_t retries = 0;
+  THRIFT_IOCTL_SOCKET_NUM_BYTES_TYPE numBytesAvailable;
+try_again:
+  int r = THRIFT_IOCTL_SOCKET(socket_, FIONREAD, &numBytesAvailable);
+  if (r == -1) {
+    int errno_copy = THRIFT_GET_SOCKET_ERROR;
+    if (errno_copy == THRIFT_EINTR && (retries++ < maxRecvRetries_)) {
+      goto try_again;
+    }
+    GlobalOutput.perror("TSocket::hasPendingDataToRead() THRIFT_IOCTL_SOCKET() " + getSocketInfo(), errno_copy);
+    throw TTransportException(TTransportException::UNKNOWN, "Unknown", errno_copy);
+  }
+  return numBytesAvailable > 0;
 }
 
 bool TSocket::isOpen() {
@@ -220,7 +240,6 @@ bool TSocket::peek() {
      * the other side
      */
     if (errno_copy == THRIFT_ECONNRESET) {
-      close();
       return false;
     }
 #endif
@@ -389,7 +408,11 @@ void TSocket::openConnection(struct addrinfo* res) {
 
 done:
   // Set socket back to normal mode (blocking)
-  THRIFT_FCNTL(socket_, THRIFT_F_SETFL, flags);
+  if (-1 == THRIFT_FCNTL(socket_, THRIFT_F_SETFL, flags)) {
+    int errno_copy = THRIFT_GET_SOCKET_ERROR;
+    GlobalOutput.perror("TSocket::open() THRIFT_FCNTL " + getSocketInfo(), errno_copy);
+    throw TTransportException(TTransportException::NOT_OPEN, "THRIFT_FCNTL() failed", errno_copy);
+  }
 
   if (path_.empty()) {
     setCachedAddress(res->ai_addr, static_cast<socklen_t>(res->ai_addrlen));
@@ -656,7 +679,6 @@ uint32_t TSocket::write_partial(const uint8_t* buf, uint32_t len) {
 
     if (errno_copy == THRIFT_EPIPE || errno_copy == THRIFT_ECONNRESET
         || errno_copy == THRIFT_ENOTCONN) {
-      close();
       throw TTransportException(TTransportException::NOT_OPEN, "write() send()", errno_copy);
     }
 
@@ -696,7 +718,7 @@ void TSocket::setLinger(bool on, int linger) {
 #ifndef _WIN32
   struct linger l = {(lingerOn_ ? 1 : 0), lingerVal_};
 #else
-  struct linger l = {(lingerOn_ ? 1 : 0), static_cast<u_short>(lingerVal_)};
+  struct linger l = {static_cast<u_short>(lingerOn_ ? 1 : 0), static_cast<u_short>(lingerVal_)};
 #endif
 
   int ret = setsockopt(socket_, SOL_SOCKET, SO_LINGER, cast_sockopt(&l), sizeof(l));
@@ -766,7 +788,7 @@ void TSocket::setSendTimeout(int ms) {
 void TSocket::setKeepAlive(bool keepAlive) {
   keepAlive_ = keepAlive;
 
-  if (socket_ == -1) {
+  if (socket_ == THRIFT_INVALID_SOCKET) {
     return;
   }
 
@@ -787,11 +809,15 @@ void TSocket::setMaxRecvRetries(int maxRecvRetries) {
 
 string TSocket::getSocketInfo() {
   std::ostringstream oss;
-  if (host_.empty() || port_ == 0) {
-    oss << "<Host: " << getPeerAddress();
-    oss << " Port: " << getPeerPort() << ">";
+  if (path_.empty()) {
+    if (host_.empty() || port_ == 0) {
+      oss << "<Host: " << getPeerAddress();
+      oss << " Port: " << getPeerPort() << ">";
+    } else {
+      oss << "<Host: " << host_ << " Port: " << port_ << ">";
+    }
   } else {
-    oss << "<Host: " << host_ << " Port: " << port_ << ">";
+    oss << "<Path: " << path_ << ">";
   }
   return oss.str();
 }

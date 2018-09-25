@@ -28,7 +28,7 @@ part of thrift;
 ///
 /// Adapted from the JS WebSocket transport.
 abstract class TSocketTransport extends TBufferedTransport {
-  final Logger log = new Logger('thrift.TSocketTransport');
+  final Logger logger = new Logger('thrift.TSocketTransport');
 
   final TSocket socket;
 
@@ -38,7 +38,7 @@ abstract class TSocketTransport extends TBufferedTransport {
       throw new ArgumentError.notNull('socket');
     }
 
-    socket.onError.listen((String e) => log.warning(e));
+    socket.onError.listen((e) => logger.warning(e));
     socket.onMessage.listen(handleIncomingMessage);
   }
 
@@ -71,15 +71,17 @@ class TClientSocketTransport extends TSocketTransport {
   TClientSocketTransport(TSocket socket) : super(socket);
 
   Future flush() {
-    Uint8List bytes = _consumeWriteBuffer();
+    Uint8List bytes = consumeWriteBuffer();
 
     // Use a sync completer to ensure that the buffer can be read immediately
     // after the read buffer is set, and avoid a race condition where another
     // response could overwrite the read buffer.
-    Completer completer = new Completer.sync();
+    var completer = new Completer<Uint8List>.sync();
     _completers.add(completer);
 
-    socket.send(bytes);
+    if (bytes.lengthInBytes > 0) {
+      socket.send(bytes);
+    }
 
     return completer.future;
   }
@@ -116,14 +118,14 @@ class TAsyncClientSocketTransport extends TSocketTransport {
         super(socket);
 
   Future flush() {
-    Uint8List bytes = _consumeWriteBuffer();
+    Uint8List bytes = consumeWriteBuffer();
     TMessage message = messageReader.readMessage(bytes);
     int seqid = message.seqid;
 
     // Use a sync completer to ensure that the buffer can be read immediately
     // after the read buffer is set, and avoid a race condition where another
     // response could overwrite the read buffer.
-    Completer completer = new Completer.sync();
+    var completer = new Completer<Uint8List>.sync();
     _completers[seqid] = completer;
 
     if (responseTimeout != null) {
@@ -163,7 +165,7 @@ class TServerSocketTransport extends TSocketTransport {
         super(socket);
 
   Future flush() async {
-    Uint8List message = _consumeWriteBuffer();
+    Uint8List message = consumeWriteBuffer();
     socket.send(message);
   }
 

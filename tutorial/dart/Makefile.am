@@ -17,7 +17,7 @@
 # under the License.
 #
 
-THRIFT = $(top_builddir)/compiler/cpp/thrift
+BUILT_SOURCES = gen-dart/tutorial/lib/tutorial.dart gen-dart/shared/lib/shared.dart
 
 gen-dart/tutorial/lib/tutorial.dart gen-dart/shared/lib/shared.dart: $(top_srcdir)/tutorial/tutorial.thrift
 	$(THRIFT) --gen dart -r $<
@@ -26,6 +26,9 @@ all-local: gen-dart/tutorial/lib/tutorial.dart pub-get
 
 clean-local:
 	$(RM) -r gen-*
+	find . -type d -name "packages" | xargs $(RM) -r
+	find . -type f -name ".packages" | xargs $(RM)
+	find . -type f -name "pubspec.lock" | xargs $(RM)
 
 pub-get: pub-get-gen pub-get-client pub-get-console-client pub-get-server
 
@@ -44,7 +47,7 @@ pub-get-console-client:
 	cd console_client; ${DARTPUB} get
 
 pub-get-server:
-	cd client; ${DARTPUB} get
+	cd server; ${DARTPUB} get
 
 tutorialserver: pub-get-gen pub-get-server
 	${DART} server/bin/main.dart
@@ -53,4 +56,18 @@ tutorialclient: pub-get-gen pub-get-client
 	cd client; ${DARTPUB} serve
 
 tutorialconsoleclient: pub-get-console-client
-	${DART} console-client/bin/main.dart
+	${DART} console_client/bin/main.dart
+
+EXTRA_DIST = \
+	client/web/client.dart \
+	client/web/index.html \
+	client/web/styles.css \
+	client/pubspec.yaml \
+	console_client/bin/main.dart \
+	console_client/pubspec.yaml \
+	server/bin/main.dart \
+	server/pubspec.yaml \
+	console_client/.analysis_options \
+	client/.analysis_options \
+	server/.analysis_options \
+	build.sh
